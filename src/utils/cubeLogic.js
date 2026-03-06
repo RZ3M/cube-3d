@@ -11,7 +11,7 @@ export const COLORS = {
 
 // Face to color mapping (user's standard Rubik's cube colors)
 // +X = right = blue, -X = left = green
-// +Y = up = white, -Y = down = yellow
+// +Y = up = white, -Y = down = yellow  
 // +Z = front = red, -Z = back = orange
 export const FACE_COLORS = {
   px: COLORS.blue,   // +X right
@@ -60,67 +60,118 @@ export function createSolvedCube() {
 }
 
 // Rotate a position 90 degrees around an axis
+// Using right-hand rule: thumb axis direction =, fingers curl = counterclockwise
+// But we want clockwise when viewed from outside the cube
 function rotatePosition(pos, axis, clockwise) {
   const [x, y, z] = pos
   const dir = clockwise ? 1 : -1
 
   switch (axis) {
     case 'x':
-      return [x, -z * dir, y * dir]
+      // Rotate around X axis: Y -> Z -> -Y -> -Z -> Y (clockwise when viewed from +X)
+      // Clockwise (dir=1): y' = z, z' = -y
+      return [x, z * dir, -y * dir]
     case 'y':
-      return [z * dir, y, -x * dir]
+      // Rotate around Y axis: Z -> X -> -Z -> -X -> Z (clockwise when viewed from +Y)
+      // Clockwise (dir=1): z' = -x, x' = z
+      return [-z * dir, y, x * dir]
     case 'z':
-      return [-y * dir, x * dir, z]
+      // Rotate around Z axis: X -> Y -> -X -> -Y -> X (clockwise when viewed from +Z)
+      // Clockwise (dir=1): x' = -y, y' = x
+      return [y * dir, -x * dir, z]
     default:
       return pos
   }
 }
 
 // Rotate colors when a cubie rotates
+// The cubie's physical colored faces rotate with it
+// FIXED: Colors rotate in opposite direction to position (stickers stay with cubie)
 function rotateColors(colors, axis, clockwise) {
   const newColors = { ...colors }
   const dir = clockwise ? 1 : -1
+  const invDir = -dir // Colors rotate opposite to position
 
-  switch (axis) {
-    case 'x':
-      if (dir === 1) {
-        newColors.py = colors.nz
-        newColors.pz = colors.py
-        newColors.ny = colors.pz
-        newColors.nz = colors.ny
-      } else {
-        newColors.py = colors.pz
-        newColors.nz = colors.py
-        newColors.ny = colors.nz
-        newColors.pz = colors.ny
-      }
-      break
-    case 'y':
-      if (dir === 1) {
-        newColors.px = colors.nz
-        newColors.pz = colors.px
-        newColors.nx = colors.pz
-        newColors.nz = colors.nx
-      } else {
-        newColors.px = colors.pz
-        newColors.nz = colors.px
-        newColors.nx = colors.nz
-        newColors.pz = colors.nx
-      }
-      break
-    case 'z':
-      if (dir === 1) {
-        newColors.px = colors.ny
-        newColors.py = colors.px
-        newColors.nx = colors.py
-        newColors.ny = colors.nx
-      } else {
-        newColors.px = colors.py
-        newColors.ny = colors.px
-        newColors.nx = colors.ny
-        newColors.py = colors.nx
-      }
-      break
+  // Each rotation cycles 4 faces
+  if (axis === 'x') {
+    // Rotate around X: py -> pz -> ny -> nz -> py
+    if (dir === 1) {
+      // Clockwise: old pz→py, old ny→pz, old nz→ny, old py→nz
+      const oldPx = colors.px
+      const oldPy = colors.py
+      const oldNy = colors.ny
+      const oldPz = colors.pz
+      const oldNz = colors.nz
+      
+      newColors.px = oldPx
+      newColors.py = oldPz  // pz becomes py
+      newColors.pz = oldNy  // ny becomes pz  
+      newColors.ny = oldNz  // nz becomes ny
+      newColors.nz = oldPy  // py becomes nz
+    } else {
+      // Counterclockwise
+      const oldPx = colors.px
+      const oldPy = colors.py
+      const oldNy = colors.ny
+      const oldPz = colors.pz
+      const oldNz = colors.nz
+      
+      newColors.px = oldPx
+      newColors.py = oldNz  // nz becomes py
+      newColors.pz = oldPy  // py becomes pz
+      newColors.ny = oldPz  // pz becomes ny
+      newColors.nz = oldNy  // ny becomes nz
+    }
+  } else if (axis === 'y') {
+    // Rotate around Y: pz -> px -> nz -> nx -> pz (clockwise when dir=1)
+    if (dir === 1) {
+      const oldPx = colors.px
+      const oldNx = colors.nx
+      const oldPz = colors.pz
+      const oldNz = colors.nz
+
+      newColors.py = colors.py
+      newColors.pz = oldPx  // px becomes pz
+      newColors.px = oldNz  // nz becomes px
+      newColors.nz = oldNx  // nx becomes nz
+      newColors.nx = oldPz  // pz becomes nx
+    } else {
+      const oldPx = colors.px
+      const oldNx = colors.nx
+      const oldPz = colors.pz
+      const oldNz = colors.nz
+
+      newColors.py = colors.py
+      newColors.pz = oldNx  // nx becomes pz
+      newColors.px = oldPz  // pz becomes px
+      newColors.nz = oldPx  // px becomes nz
+      newColors.nx = oldNz  // nz becomes nx
+    }
+  } else if (axis === 'z') {
+    // Rotate around Z: px -> py -> nx -> ny -> px (clockwise when dir=1)
+    if (dir === 1) {
+      const oldPx = colors.px
+      const oldNx = colors.nx
+      const oldPy = colors.py
+      const oldNy = colors.ny
+
+      newColors.nz = colors.nz
+      newColors.px = oldPy  // py becomes px
+      newColors.py = oldNx  // nx becomes py
+      newColors.nx = oldNy  // ny becomes nx
+      newColors.ny = oldPx  // px becomes ny
+    } else {
+      const oldPx = colors.px
+      const oldNx = colors.nx
+      const oldPy = colors.py
+      const oldNy = colors.ny
+
+      newColors.nz = colors.nz
+      newColors.px = oldNy  // ny becomes px
+      newColors.py = oldPx  // px becomes py
+      newColors.nx = oldPy  // py becomes nx
+      newColors.ny = oldNx  // nx becomes ny
+    }
   }
 
   return newColors
