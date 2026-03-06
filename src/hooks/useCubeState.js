@@ -1,9 +1,9 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import {
   createSolvedCube,
   applyMove,
   generateScramble,
-  isSolved,
+  isSolved as checkSolved,
   reverseMoves
 } from '../utils/cubeLogic'
 
@@ -13,69 +13,82 @@ export function useCubeState() {
   const [moveCount, setMoveCount] = useState(0)
   const [isAnimating, setIsAnimating] = useState(false)
   const [currentAnimation, setCurrentAnimation] = useState(null)
-  const [scrambleMoves, setScrambleMoves] = useState([])
 
-  // Apply a single move with animation
+  // Solve state - simple counter approach
+  const solveIndexRef = useRef(0)
+  const solveMovesRef = useRef([])
+
+  // Start a single move
   const move = useCallback((moveNotation) => {
-    if (isAnimating) return false
-
     setIsAnimating(true)
     setCurrentAnimation(moveNotation)
+  }, [])
 
-    // After animation completes, update state
-    setTimeout(() => {
-      setCubies(prev => applyMove(prev, moveNotation))
-      setMoveHistory(prev => [...prev, moveNotation])
+  // Called by Cube component when animation finishes
+  const onMoveComplete = useCallback((updatedCubies, completedMove) => {
+    // Update cubies
+    setCubies(updatedCubies)
+    setCurrentAnimation(null)
+    setIsAnimating(false)
+    
+    // Track move
+    if (completedMove) {
+      setMoveHistory(prev => [...prev, completedMove])
       setMoveCount(prev => prev + 1)
-      setIsAnimating(false)
-      setCurrentAnimation(null)
-    }, 300)
+    }
+    
+    // Check if we have more solve moves to play
+    const remainingMoves = solveMovesRef.current.slice(solveIndexRef.current + 1)
+    if (remainingMoves.length > 0) {
+      // Schedule next move after a small delay
+      solveIndexRef.current += 1
+      setTimeout(() => {
+        move(remainingMoves[0])
+      }, 80)
+    } else {
+      // Done solving
+      solveIndexRef.current = 0
+      solveMovesRef.current = []
+    }
+  }, [move])
 
-    return true
-  }, [isAnimating])
-
-  // Scramble the cube
+  // Scramble - instant, no animation
   const scramble = useCallback(() => {
     const moves = generateScramble(20)
-    setScrambleMoves(moves)
-
-    // Apply all scramble moves instantly
     let newCubies = createSolvedCube()
     for (const m of moves) {
       newCubies = applyMove(newCubies, m)
     }
-
     setCubies(newCubies)
     setMoveHistory(moves)
     setMoveCount(moves.length)
   }, [])
 
-  // Reset to solved state
+  // Reset
   const reset = useCallback(() => {
     setCubies(createSolvedCube())
     setMoveHistory([])
     setMoveCount(0)
-    setScrambleMoves([])
     setIsAnimating(false)
     setCurrentAnimation(null)
+    solveIndexRef.current = 0
+    solveMovesRef.current = []
   }, [])
 
-  // Auto-solve by reversing scramble moves
+  // Solve - queue all moves and start playing
   const solve = useCallback(() => {
-    if (scrambleMoves.length === 0) return
-
-    const solveMoves = reverseMoves(scrambleMoves)
-    setScrambleMoves([])
-
-    // Animate each solve move sequentially
-    let delay = 0
-    for (const m of solveMoves) {
-      setTimeout(() => {
-        move(m)
-      }, delay)
-      delay += 350
+    if (moveHistory.length === 0) {
+      // Already solved - nothing to do
+      return
     }
-  }, [scrambleMoves, move])
+
+    const moves = reverseMoves(moveHistory)
+    solveMovesRef.current = moves
+    solveIndexRef.current = 0
+
+    // Start first move
+    move(moves[0])
+  }, [moveHistory, move])
 
   return {
     cubies,
@@ -83,8 +96,9 @@ export function useCubeState() {
     moveCount,
     isAnimating,
     currentAnimation,
-    isSolved: isSolved(cubies),
+    isSolved: checkSolved(cubies),
     move,
+    onMoveComplete,
     scramble,
     reset,
     solve

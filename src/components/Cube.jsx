@@ -1,12 +1,12 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Cubie } from './Cubie'
-import { MOVES } from '../utils/cubeLogic'
+import { MOVES, applyMove } from '../utils/cubeLogic'
 import * as THREE from 'three'
 
 const ANIMATION_DURATION = 250 // ms
 
-export function Cube({ cubies, onMove, currentAnimation, isAnimating }) {
+export function Cube({ cubies, onMove, onMoveComplete, currentAnimation, isAnimating }) {
   const groupRef = useRef()
   const rotatingGroupRef = useRef()
   const [isDragging, setIsDragging] = useState(false)
@@ -39,15 +39,21 @@ export function Cube({ cubies, onMove, currentAnimation, isAnimating }) {
 
     // Animation complete
     if (progress >= 1) {
+      // Apply the move to cubies data
+      const updatedCubies = applyMove(cubies, animState.move)
       // Clear animation state
       rotatingGroupRef.current.rotation.set(0, 0, 0)
       setAnimState(null)
+      // Notify parent to update state (pass the move that was just completed)
+      if (onMoveComplete) {
+        onMoveComplete(updatedCubies, animState.move)
+      }
     }
   })
 
   // Start animation when currentAnimation changes
   useEffect(() => {
-    if (!currentAnimation || isAnimating) return
+    if (!currentAnimation || animState) return
 
     // Parse the move
     const isPrime = currentAnimation.includes("'")
@@ -77,9 +83,10 @@ export function Cube({ cubies, onMove, currentAnimation, isAnimating }) {
       axis,
       layerValue,
       targetAngle,
-      startTime: performance.now()
+      startTime: performance.now(),
+      move: currentAnimation
     })
-  }, [currentAnimation, isAnimating])
+  }, [currentAnimation])
 
   // Get cubies in a specific layer
   const getCubiesInLayer = useCallback((axis, layerValue) => {
