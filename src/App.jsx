@@ -15,6 +15,7 @@ function App() {
     isSolved,
     move,
     onMoveComplete,
+    checkDuringSolve,
     scramble,
     reset,
     solve
@@ -69,6 +70,7 @@ function App() {
             cubies={cubies}
             onMove={move}
             onMoveComplete={onMoveComplete}
+            checkDuringSolve={checkDuringSolve}
             currentAnimation={currentAnimation}
             isAnimating={isAnimating}
           />

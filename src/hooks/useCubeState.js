@@ -4,7 +4,7 @@ import {
   applyMove,
   generateScramble,
   isSolved as checkSolved,
-  reverseMoves
+  getInverseMove
 } from '../utils/cubeLogic'
 
 export function useCubeState() {
@@ -31,11 +31,19 @@ export function useCubeState() {
     setIsAnimating(false)
     
     if (completedMove) {
-      // Only track manual moves, not solve moves
       if (!isSolvingRef.current) {
         setMoveHistory(prev => [...prev, completedMove])
       }
       setMoveCount(prev => prev + 1)
+    }
+    
+    // Check if solved BEFORE queueing next move
+    if (isSolvingRef.current && checkSolved(updatedCubies)) {
+      console.log('Solved! Stopping.')
+      isSolvingRef.current = false
+      solveMovesRef.current = []
+      setMoveHistory([])
+      return
     }
     
     // Check if we have more solve moves to play
@@ -45,14 +53,13 @@ export function useCubeState() {
         move(nextMove)
       }, 80)
     } else if (isSolvingRef.current) {
-      // All solve moves done
       isSolvingRef.current = false
       solveMovesRef.current = []
       setMoveHistory([])
     }
   }, [move])
 
-  // Scramble - instant, no animation
+  // Scramble - instant, no animation, doesn't count toward move count
   const scramble = useCallback(() => {
     const moves = generateScramble(20)
     let newCubies = createSolvedCube()
@@ -61,35 +68,65 @@ export function useCubeState() {
     }
     setCubies(newCubies)
     setMoveHistory(moves)
-    setMoveCount(moves.length)
+    // Don't count scramble moves - reset to 0
+    setMoveCount(0)
   }, [])
 
-  // Reset
+  // Reset - fully reset to solved state
   const reset = useCallback(() => {
+    // Kill any pending animations
+    setIsAnimating(false)
+    setCurrentAnimation(null)
+    
+    // Clear solve queue
+    isSolvingRef.current = false
+    solveMovesRef.current = []
+    
+    // Reset to solved cube
     setCubies(createSolvedCube())
     setMoveHistory([])
     setMoveCount(0)
-    setIsAnimating(false)
-    setCurrentAnimation(null)
-    isSolvingRef.current = false
-    solveMovesRef.current = []
   }, [])
 
-  // Solve - only if not already solved and has moves
+  // Solve - simple reverse of move history
   const solve = useCallback(() => {
-    if (checkSolved(cubies) || moveHistory.length === 0) {
+    // Don't solve if already solved
+    if (checkSolved(cubies)) {
+      return
+    }
+    
+    // Don't solve if no moves to reverse
+    if (!moveHistory || moveHistory.length === 0) {
+      return
+    }
+
+    // Reverse each move to its inverse
+    const solution = [...moveHistory].reverse().map(m => getInverseMove(m))
+    
+    if (!solution || solution.length === 0) {
       return
     }
 
     isSolvingRef.current = true
-    solveMovesRef.current = reverseMoves(moveHistory)
+    solveMovesRef.current = solution
     
-    // Start first move
     const firstMove = solveMovesRef.current.shift()
     if (firstMove) {
       move(firstMove)
     }
-  }, [moveHistory, move, cubies])
+  }, [move, cubies, moveHistory])
+
+  // Check if solved during solve sequence
+  const checkDuringSolve = useCallback((currentCubies) => {
+    const solved = checkSolved(currentCubies)
+    console.log('checkDuringSolve called, isSolved:', solved, 'isSolving:', isSolvingRef.current, 'queue:', solveMovesRef.current.length)
+    if (isSolvingRef.current && solved) {
+      console.log('SOLVED! Stopping solve sequence')
+      isSolvingRef.current = false
+      solveMovesRef.current = []
+      setMoveHistory([])
+    }
+  }, [])
 
   return {
     cubies,
@@ -100,6 +137,7 @@ export function useCubeState() {
     isSolved: checkSolved(cubies),
     move,
     onMoveComplete,
+    checkDuringSolve,
     scramble,
     reset,
     solve

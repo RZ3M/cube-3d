@@ -1,50 +1,87 @@
-import React, { useRef } from 'react'
+import React, { useMemo } from 'react'
+import { RoundedBox } from '@react-three/drei'
 import * as THREE from 'three'
 
-const CUBIE_SIZE = 0.92
-const GAP = 0.04
+const CUBIE_SIZE = 1
+const ROUNDING_RADIUS = 0.08
+const STICKER_INSET = 0.06
+const STICKER_ELEVATION = 0.002
 
-// Material properties for realistic plastic look
-const MATERIAL_PROPS = {
+// Shared black material - created once
+const blackMaterial = new THREE.MeshStandardMaterial({
+  color: '#111111',
   metalness: 0.15,
   roughness: 0.35
+})
+
+// Shared sticker geometry - created once
+const stickerGeometry = new THREE.PlaneGeometry(
+  CUBIE_SIZE - (STICKER_INSET * 2),
+  CUBIE_SIZE - (STICKER_INSET * 2)
+)
+
+// Material cache to prevent recreation
+const materialCache = new Map()
+
+function getStickerMaterial(color) {
+  if (!materialCache.has(color)) {
+    materialCache.set(color, new THREE.MeshStandardMaterial({
+      color: color,
+      roughness: 0.22,
+      metalness: 0.02
+    }))
+  }
+  return materialCache.get(color)
 }
 
-export function Cubie({ position, colors }) {
-  const meshRef = useRef()
-
-  // Calculate actual position with gap
-  const posX = position[0] * (1 + GAP)
-  const posY = position[1] * (1 + GAP)
-  const posZ = position[2] * (1 + GAP)
-
-  // Create materials for each face
-  // Three.js BoxGeometry face order: +X, -X, +Y, -Y, +Z, -Z
-  const createMaterial = (color) => {
-    const isBlack = color === '#111111'
-    return new THREE.MeshStandardMaterial({
-      color: color,
-      metalness: isBlack ? 0.3 : MATERIAL_PROPS.metalness,
-      roughness: isBlack ? 0.5 : MATERIAL_PROPS.roughness
-    })
-  }
-
-  // Materials array for BoxGeometry (must be in correct order!)
-  const materials = [
-    createMaterial(colors.px),  // +X right (index 0)
-    createMaterial(colors.nx),   // -X left (index 1)
-    createMaterial(colors.py),   // +Y top (index 2)
-    createMaterial(colors.ny),  // -Y bottom (index 3)
-    createMaterial(colors.pz),  // +Z front (index 4)
-    createMaterial(colors.nz)   // -Z back (index 5)
-  ]
+// Memoized Cubie component
+export const Cubie = React.memo(function Cubie({ position, colors }) {
+  // Memoize sticker data to prevent recalculation
+  const stickerData = useMemo(() => {
+    const result = []
+    if (colors.px !== '#111111') {
+      result.push({ color: colors.px, pos: [CUBIE_SIZE/2 + STICKER_ELEVATION, 0, 0], rot: [0, Math.PI/2, 0] })
+    }
+    if (colors.nx !== '#111111') {
+      result.push({ color: colors.nx, pos: [-CUBIE_SIZE/2 - STICKER_ELEVATION, 0, 0], rot: [0, -Math.PI/2, 0] })
+    }
+    if (colors.py !== '#111111') {
+      result.push({ color: colors.py, pos: [0, CUBIE_SIZE/2 + STICKER_ELEVATION, 0], rot: [-Math.PI/2, 0, 0] })
+    }
+    if (colors.ny !== '#111111') {
+      result.push({ color: colors.ny, pos: [0, -CUBIE_SIZE/2 - STICKER_ELEVATION, 0], rot: [Math.PI/2, 0, 0] })
+    }
+    if (colors.pz !== '#111111') {
+      result.push({ color: colors.pz, pos: [0, 0, CUBIE_SIZE/2 + STICKER_ELEVATION], rot: [0, 0, 0] })
+    }
+    if (colors.nz !== '#111111') {
+      result.push({ color: colors.nz, pos: [0, 0, -CUBIE_SIZE/2 - STICKER_ELEVATION], rot: [0, Math.PI, 0] })
+    }
+    return result
+  }, [colors.px, colors.nx, colors.py, colors.ny, colors.pz, colors.nz])
 
   return (
-    <group position={[posX, posY, posZ]}>
-      {/* Main cubie - use standard BoxGeometry with materials array */}
-      <mesh ref={meshRef} material={materials}>
-        <boxGeometry args={[CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE]} />
-      </mesh>
+    <group position={position}>
+      {/* Black rounded box body */}
+      <RoundedBox 
+        args={[CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE]} 
+        radius={ROUNDING_RADIUS} 
+        smoothness={4}
+      >
+        <primitive object={blackMaterial} attach="material" />
+      </RoundedBox>
+      
+      {/* Colored stickers */}
+      {stickerData.map((sticker, i) => (
+        <mesh 
+          key={i} 
+          position={sticker.pos} 
+          rotation={sticker.rot}
+          geometry={stickerGeometry}
+        >
+          <primitive object={getStickerMaterial(sticker.color)} attach="material" />
+        </mesh>
+      ))}
     </group>
   )
-}
+})
