@@ -22,14 +22,14 @@ export function useCubeState() {
     setIsAnimating(true)
     setCurrentAnimation(moveNotation)
 
-    // After animation completes, update state
+    // Update state just before animation completes to ensure smooth handoff
     setTimeout(() => {
       setCubies(prev => applyMove(prev, moveNotation))
       setMoveHistory(prev => [...prev, moveNotation])
       setMoveCount(prev => prev + 1)
       setIsAnimating(false)
       setCurrentAnimation(null)
-    }, 300)
+    }, 245)
 
     return true
   }, [isAnimating])
