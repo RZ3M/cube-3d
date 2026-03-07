@@ -14,8 +14,6 @@ function App() {
     currentAnimation,
     isSolved,
     move,
-    onMoveComplete,
-    checkDuringSolve,
     scramble,
     reset,
     solve
@@ -69,8 +67,6 @@ function App() {
           <Cube
             cubies={cubies}
             onMove={move}
-            onMoveComplete={onMoveComplete}
-            checkDuringSolve={checkDuringSolve}
             currentAnimation={currentAnimation}
             isAnimating={isAnimating}
           />
@@ -89,6 +85,12 @@ function App() {
               intensity={0.15}
               luminanceThreshold={0.8}
               luminanceSmoothing={0.9}
+            />
+            <SSAO
+              samples={16}
+              radius={0.1}
+              intensity={15}
+              luminanceInfluence={0.5}
             />
           </EffectComposer>
         </Canvas>

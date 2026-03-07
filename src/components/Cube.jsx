@@ -1,12 +1,12 @@
-import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react'
+import React, { useRef, useState, useCallback, useEffect } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Cubie } from './Cubie'
-import { MOVES, applyMove } from '../utils/cubeLogic'
+import { MOVES } from '../utils/cubeLogic'
 import * as THREE from 'three'
 
 const ANIMATION_DURATION = 250 // ms
 
-export function Cube({ cubies, onMove, onMoveComplete, checkDuringSolve, currentAnimation, isAnimating }) {
+export function Cube({ cubies, onMove, currentAnimation, isAnimating }) {
   const groupRef = useRef()
   const rotatingGroupRef = useRef()
   const [isDragging, setIsDragging] = useState(false)
@@ -14,7 +14,6 @@ export function Cube({ cubies, onMove, onMoveComplete, checkDuringSolve, current
   const [dragFace, setDragFace] = useState(null)
   const [dragCubie, setDragCubie] = useState(null)
   const [animState, setAnimState] = useState(null) // { axis, layerValue, targetAngle, startTime }
-  const animStateRef = useRef(null) // Track animation state without causing re-renders
   const { camera, gl } = useThree()
 
   // Handle animation frame
@@ -40,27 +39,15 @@ export function Cube({ cubies, onMove, onMoveComplete, checkDuringSolve, current
 
     // Animation complete
     if (progress >= 1) {
-      const move = animStateRef.current.move
-      // Apply the move to cubies data
-      const updatedCubies = applyMove(cubies, move)
       // Clear animation state
       rotatingGroupRef.current.rotation.set(0, 0, 0)
       setAnimState(null)
-      animStateRef.current = null
-      // Notify parent to update state (pass the move that was just completed)
-      if (onMoveComplete) {
-        onMoveComplete(updatedCubies, move)
-        // Check if solved during solve sequence - stop if we reach solved state
-        if (checkDuringSolve) {
-          checkDuringSolve(updatedCubies)
-        }
-      }
     }
   })
 
   // Start animation when currentAnimation changes
   useEffect(() => {
-    if (!currentAnimation || animStateRef.current) return
+    if (!currentAnimation || isAnimating) return
 
     // Parse the move
     const isPrime = currentAnimation.includes("'")
@@ -86,16 +73,13 @@ export function Cube({ cubies, onMove, onMoveComplete, checkDuringSolve, current
 
     const targetAngle = clockwise ? -90 : 90 // Negative for clockwise in Three.js
 
-    const newAnimState = {
+    setAnimState({
       axis,
       layerValue,
       targetAngle,
-      startTime: performance.now(),
-      move: currentAnimation
-    }
-    setAnimState(newAnimState)
-    animStateRef.current = newAnimState
-  }, [currentAnimation])
+      startTime: performance.now()
+    })
+  }, [currentAnimation, isAnimating])
 
   // Get cubies in a specific layer
   const getCubiesInLayer = useCallback((axis, layerValue) => {
@@ -170,7 +154,7 @@ export function Cube({ cubies, onMove, onMoveComplete, checkDuringSolve, current
     setIsDragging(true)
     setDragStart(point)
     setDragFace(faceNormal)
-    setDragCubie(intersection.object.position.clone().toArray())
+    setDragCubie(intersection.object.position.clone().divideScalar(1.02).toArray())
 
     // Capture pointer
     gl.domElement.setPointerCapture(event.pointerId)
@@ -237,8 +221,8 @@ export function Cube({ cubies, onMove, onMoveComplete, checkDuringSolve, current
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onMove, isAnimating])
 
-  // Memoize layer cubies to prevent flickering during animation
-  const { rotating, static: staticCubies } = useMemo(() => {
+  // Get cubies in the rotating layer
+  const getLayerCubies = () => {
     if (!animState) return { rotating: [], static: cubies }
 
     const axisIndex = { x: 0, y: 1, z: 2 }[animState.axis]
@@ -246,29 +230,35 @@ export function Cube({ cubies, onMove, onMoveComplete, checkDuringSolve, current
     const staticCubies = cubies.filter(c => c.position[axisIndex] !== animState.layerValue)
 
     return { rotating, static: staticCubies }
-  }, [cubies, animState])
+  }
 
-  // Memoize static cubies render list
-  const staticCubiesElements = useMemo(() => (
-    staticCubies.map(cubie => (
-      <Cubie
-        key={cubie.id}
-        position={cubie.position}
-        colors={cubie.colors}
-      />
-    ))
-  ), [staticCubies])
+  const { rotating, static: staticCubies } = getLayerCubies()
 
-  // Memoize rotating cubies render list
-  const rotatingCubiesElements = useMemo(() => (
-    rotating.map(cubie => (
-      <Cubie
-        key={cubie.id}
-        position={cubie.position}
-        colors={cubie.colors}
-      />
-    ))
-  ), [rotating])
+  // Render cubies
+  const renderCubies = () => {
+    return (
+      <>
+        {/* Static cubies */}
+        {staticCubies.map(cubie => (
+          <Cubie
+            key={cubie.id}
+            position={cubie.position}
+            colors={cubie.colors}
+          />
+        ))}
+        {/* Rotating cubies in animated group */}
+        <group ref={rotatingGroupRef}>
+          {rotating.map(cubie => (
+            <Cubie
+              key={cubie.id}
+              position={cubie.position}
+              colors={cubie.colors}
+            />
+          ))}
+        </group>
+      </>
+    )
+  }
 
   return (
     <group
@@ -278,12 +268,7 @@ export function Cube({ cubies, onMove, onMoveComplete, checkDuringSolve, current
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
-      {/* Static cubies */}
-      {staticCubiesElements}
-      {/* Rotating cubies in animated group */}
-      <group ref={rotatingGroupRef}>
-        {rotatingCubiesElements}
-      </group>
+      {renderCubies()}
     </group>
   )
 }
