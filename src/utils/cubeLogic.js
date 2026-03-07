@@ -23,9 +23,29 @@ export const FACE_COLORS = {
 }
 
 // Move notation
-export const MOVES = ['R', 'L', 'U', 'D', 'F', 'B']
-export const MOVE_INVERSES = { R: "R'", L: "L'", U: "U'", D: "D'", F: "F'", B: "B'" }
-export const MOVE_KEYS = { "R'": 'R', "L'": 'L', "U'": 'U', "D'": 'D', "F'": 'F', "B'": 'B' }
+export const MOVES = ['R', 'L', 'U', 'D', 'F', 'B', 'M', 'E', 'S']
+export const MOVE_INVERSES = {
+  R: "R'",
+  L: "L'",
+  U: "U'",
+  D: "D'",
+  F: "F'",
+  B: "B'",
+  M: "M'",
+  E: "E'",
+  S: "S'"
+}
+export const MOVE_KEYS = {
+  "R'": 'R',
+  "L'": 'L',
+  "U'": 'U',
+  "D'": 'D',
+  "F'": 'F',
+  "B'": 'B',
+  "M'": 'M',
+  "E'": 'E',
+  "S'": 'S'
+}
 
 // Create initial solved cube state (27 cubies)
 export function createSolvedCube() {
@@ -216,6 +236,21 @@ export function applyMove(cubies, move) {
       axis = 'z'
       layerValue = -1
       clockwise = isPrime
+      break
+    case 'M': // Middle slice, follows L
+      axis = 'x'
+      layerValue = 0
+      clockwise = isPrime
+      break
+    case 'E': // Equator slice, follows D
+      axis = 'y'
+      layerValue = 0
+      clockwise = isPrime
+      break
+    case 'S': // Standing slice, follows F
+      axis = 'z'
+      layerValue = 0
+      clockwise = !isPrime
       break
     default:
       return cubies

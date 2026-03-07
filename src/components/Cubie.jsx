@@ -1,4 +1,5 @@
-import React, { useRef } from 'react'
+import React, { memo, useEffect, useMemo, useRef } from 'react'
+import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
 const CUBIE_SIZE = 0.92
@@ -10,8 +11,11 @@ const MATERIAL_PROPS = {
   roughness: 0.35
 }
 
-export function Cubie({ position, colors }) {
-  const meshRef = useRef()
+const AXIS_INDEX = { x: 0, y: 1, z: 2 }
+
+export const Cubie = memo(function Cubie({ position, colors, animation, onPointerDown }) {
+  const groupRef = useRef()
+  const axisVecRef = useRef(new THREE.Vector3())
 
   // Calculate actual position with gap
   const posX = position[0] * (1 + GAP)
@@ -30,21 +34,53 @@ export function Cubie({ position, colors }) {
   }
 
   // Materials array for BoxGeometry (must be in correct order!)
-  const materials = [
-    createMaterial(colors.px),  // +X right (index 0)
-    createMaterial(colors.nx),   // -X left (index 1)
-    createMaterial(colors.py),   // +Y top (index 2)
-    createMaterial(colors.ny),  // -Y bottom (index 3)
-    createMaterial(colors.pz),  // +Z front (index 4)
-    createMaterial(colors.nz)   // -Z back (index 5)
-  ]
+  const materials = useMemo(() => ([
+    createMaterial(colors.px), // +X right (index 0)
+    createMaterial(colors.nx), // -X left (index 1)
+    createMaterial(colors.py), // +Y top (index 2)
+    createMaterial(colors.ny), // -Y bottom (index 3)
+    createMaterial(colors.pz), // +Z front (index 4)
+    createMaterial(colors.nz) // -Z back (index 5)
+  ]), [colors.nx, colors.ny, colors.nz, colors.px, colors.py, colors.pz])
+
+  useEffect(() => {
+    return () => {
+      materials.forEach(material => material.dispose())
+    }
+  }, [materials])
+
+  useFrame(() => {
+    const group = groupRef.current
+    if (!group) return
+
+    group.rotation.set(0, 0, 0)
+
+    const currentAnimation = animation?.current
+    if (!currentAnimation) return
+
+    const axisIndex = AXIS_INDEX[currentAnimation.axis]
+    if (position[axisIndex] !== currentAnimation.layerValue) return
+
+    axisVecRef.current.set(
+      currentAnimation.axis === 'x' ? 1 : 0,
+      currentAnimation.axis === 'y' ? 1 : 0,
+      currentAnimation.axis === 'z' ? 1 : 0
+    )
+
+    group.rotateOnWorldAxis(
+      axisVecRef.current,
+      THREE.MathUtils.degToRad(currentAnimation.currentAngle)
+    )
+  })
 
   return (
-    <group position={[posX, posY, posZ]}>
-      {/* Main cubie - use standard BoxGeometry with materials array */}
-      <mesh ref={meshRef} material={materials}>
-        <boxGeometry args={[CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE]} />
-      </mesh>
+    <group ref={groupRef}>
+      <group position={[posX, posY, posZ]}>
+        {/* Main cubie - use standard BoxGeometry with materials array */}
+        <mesh material={materials} onPointerDown={(event) => onPointerDown?.(event, position)}>
+          <boxGeometry args={[CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE]} />
+        </mesh>
+      </group>
     </group>
   )
-}
+})

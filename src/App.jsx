@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei'
 import { EffectComposer, Bloom, SSAO } from '@react-three/postprocessing'
@@ -7,6 +7,7 @@ import { Controls } from './components/Controls'
 import { useCubeState } from './hooks/useCubeState'
 
 function App() {
+  const [isDragging, setIsDragging] = useState(false)
   const {
     cubies,
     moveCount,
@@ -14,6 +15,7 @@ function App() {
     currentAnimation,
     isSolved,
     move,
+    completeMove,
     scramble,
     reset,
     solve
@@ -67,11 +69,14 @@ function App() {
           <Cube
             cubies={cubies}
             onMove={move}
+            onAnimationComplete={completeMove}
+            onDragStateChange={setIsDragging}
             currentAnimation={currentAnimation}
             isAnimating={isAnimating}
           />
 
           <OrbitControls
+            enabled={!isDragging && !isAnimating}
             enablePan={false}
             minDistance={5}
             maxDistance={15}
