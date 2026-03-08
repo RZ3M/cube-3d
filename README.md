@@ -6,6 +6,7 @@ This README is written against the current codebase in this repository.
 
 ## Table of Contents
 
+- [Screenshots](#screenshots)
 - [What It Does](#what-it-does)
 - [Current Solve Behavior](#current-solve-behavior)
 - [Tech Stack](#tech-stack)
@@ -18,6 +19,16 @@ This README is written against the current codebase in this repository.
 - [Color and Orientation Model](#color-and-orientation-model)
 - [Development Notes](#development-notes)
 - [Limitations](#limitations)
+
+## Screenshots
+
+### Desktop
+
+![Desktop screenshot of the Cube 3D app](docs/images/app-desktop.png)
+
+### Mobile
+
+![Mobile screenshot of the Cube 3D app](docs/images/app-mobile.png)
 
 ## What It Does
 
@@ -235,7 +246,7 @@ The app uses pointer movement direction and the touched cubie's position to infe
 
 ### Orbit controls
 
-Camera orbiting is disabled while a layer turn is active so drag gestures do not compete with move input.
+Camera orbiting is disabled only while you are actively dragging a cubie face to start a layer turn. You can still orbit the camera during solve playback and other non-drag animations.
 
 ## Color and Orientation Model
 
