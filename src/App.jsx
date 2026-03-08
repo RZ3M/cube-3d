@@ -84,7 +84,7 @@ function App() {
           />
 
           <OrbitControls
-            enabled={!isDragging && !isAnimating}
+            enabled={!isDragging}
             enablePan={false}
             minDistance={isTouchDevice ? 6.4 : 5.4}
             maxDistance={isTouchDevice ? 13 : 11}

@@ -14,10 +14,15 @@ export function useCubeState() {
   const [moveCount, setMoveCount] = useState(0)
   const [isAnimating, setIsAnimating] = useState(false)
   const [currentAnimation, setCurrentAnimation] = useState(null)
+  const cubiesRef = useRef(cubies)
   const isAnimatingRef = useRef(false)
   const solveQueueRef = useRef([])
   const animationTokenRef = useRef(0)
   const stateMovesRef = useRef([])
+
+  useEffect(() => {
+    cubiesRef.current = cubies
+  }, [cubies])
 
   const startMove = useCallback((moveNotation) => {
     if (!moveNotation || isAnimatingRef.current) return false
@@ -41,10 +46,18 @@ export function useCubeState() {
   const completeMove = useCallback((moveNotation) => {
     if (!moveNotation) return
 
-    setCubies(prev => applyMove(prev, moveNotation))
+    const nextCubies = applyMove(cubiesRef.current, moveNotation)
+    const nextMoves = normalizeMoves([...stateMovesRef.current, moveNotation])
+    const solved = isSolved(nextCubies)
+
+    cubiesRef.current = nextCubies
+    setCubies(nextCubies)
     setMoveHistory(prev => [...prev, moveNotation])
     setMoveCount(prev => prev + 1)
-    stateMovesRef.current = normalizeMoves([...stateMovesRef.current, moveNotation])
+    stateMovesRef.current = solved ? [] : nextMoves
+    if (solved) {
+      solveQueueRef.current = []
+    }
     isAnimatingRef.current = false
     setIsAnimating(false)
     setCurrentAnimation(null)
@@ -63,6 +76,7 @@ export function useCubeState() {
     }
 
     setCubies(newCubies)
+    cubiesRef.current = newCubies
     setMoveHistory([])
     setMoveCount(0)
     stateMovesRef.current = normalizeMoves(moves)
@@ -74,7 +88,9 @@ export function useCubeState() {
   const reset = useCallback(() => {
     solveQueueRef.current = []
     isAnimatingRef.current = false
-    setCubies(createSolvedCube())
+    const solvedCubies = createSolvedCube()
+    setCubies(solvedCubies)
+    cubiesRef.current = solvedCubies
     setMoveHistory([])
     setMoveCount(0)
     stateMovesRef.current = []
