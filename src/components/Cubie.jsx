@@ -1,17 +1,51 @@
 import React, { memo, useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
+import { RoundedBox } from '@react-three/drei'
 import * as THREE from 'three'
 
-const CUBIE_SIZE = 0.92
-const GAP = 0.04
+const CUBIE_SIZE = 0.98
+const GAP = 0.0
+const BODY_RADIUS = 0.1
+const BODY_SMOOTHNESS = 6
+const STICKER_SIZE = 0.8
+const STICKER_INSET = CUBIE_SIZE / 2 + 0.001
+const STICKER_RADIUS = 0.085
 
 // Material properties for realistic plastic look
 const MATERIAL_PROPS = {
-  metalness: 0.15,
-  roughness: 0.35
+  metalness: 0.02,
+  roughness: 0.26,
+  clearcoat: 0.18,
+  clearcoatRoughness: 0.2
 }
 
 const AXIS_INDEX = { x: 0, y: 1, z: 2 }
+const STICKER_FACES = [
+  { key: 'px', position: [STICKER_INSET, 0, 0], rotation: [0, Math.PI / 2, 0] },
+  { key: 'nx', position: [-STICKER_INSET, 0, 0], rotation: [0, -Math.PI / 2, 0] },
+  { key: 'py', position: [0, STICKER_INSET, 0], rotation: [-Math.PI / 2, 0, 0] },
+  { key: 'ny', position: [0, -STICKER_INSET, 0], rotation: [Math.PI / 2, 0, 0] },
+  { key: 'pz', position: [0, 0, STICKER_INSET], rotation: [0, 0, 0] },
+  { key: 'nz', position: [0, 0, -STICKER_INSET], rotation: [0, Math.PI, 0] }
+]
+
+function createRoundedStickerShape(size, radius) {
+  const half = size / 2
+  const r = Math.min(radius, half)
+  const shape = new THREE.Shape()
+
+  shape.moveTo(-half + r, -half)
+  shape.lineTo(half - r, -half)
+  shape.quadraticCurveTo(half, -half, half, -half + r)
+  shape.lineTo(half, half - r)
+  shape.quadraticCurveTo(half, half, half - r, half)
+  shape.lineTo(-half + r, half)
+  shape.quadraticCurveTo(-half, half, -half, half - r)
+  shape.lineTo(-half, -half + r)
+  shape.quadraticCurveTo(-half, -half, -half + r, -half)
+
+  return shape
+}
 
 export const Cubie = memo(function Cubie({ position, colors, animation, onPointerDown }) {
   const groupRef = useRef()
@@ -21,33 +55,54 @@ export const Cubie = memo(function Cubie({ position, colors, animation, onPointe
   const posX = position[0] * (1 + GAP)
   const posY = position[1] * (1 + GAP)
   const posZ = position[2] * (1 + GAP)
+  const stickerShape = useMemo(() => createRoundedStickerShape(STICKER_SIZE, STICKER_RADIUS), [])
 
-  // Create materials for each face
-  // Three.js BoxGeometry face order: +X, -X, +Y, -Y, +Z, -Z
-  const createMaterial = (color) => {
-    const isBlack = color === '#111111'
-    return new THREE.MeshStandardMaterial({
-      color: color,
-      metalness: isBlack ? 0.3 : MATERIAL_PROPS.metalness,
-      roughness: isBlack ? 0.5 : MATERIAL_PROPS.roughness
+  const bodyMaterial = useMemo(() => new THREE.MeshPhysicalMaterial({
+    color: '#8b98ab',
+    metalness: 0.02,
+    roughness: 0.58,
+    transmission: 0.46,
+    transparent: true,
+    opacity: 0.86,
+    thickness: 1.4,
+    ior: 1.36,
+    reflectivity: 0.16,
+    attenuationDistance: 0.2,
+    attenuationColor: '#7b889d',
+    clearcoat: 0.34,
+    clearcoatRoughness: 0.34,
+    envMapIntensity: 0.22
+  }), [])
+
+  const stickerMaterials = useMemo(() => {
+    const createStickerMaterial = (color) => new THREE.MeshPhysicalMaterial({
+      color,
+      metalness: MATERIAL_PROPS.metalness,
+      roughness: MATERIAL_PROPS.roughness,
+      clearcoat: MATERIAL_PROPS.clearcoat,
+      clearcoatRoughness: MATERIAL_PROPS.clearcoatRoughness,
+      envMapIntensity: 0.12,
+      transmission: 0,
+      transparent: false,
+      opacity: 1
     })
-  }
 
-  // Materials array for BoxGeometry (must be in correct order!)
-  const materials = useMemo(() => ([
-    createMaterial(colors.px), // +X right (index 0)
-    createMaterial(colors.nx), // -X left (index 1)
-    createMaterial(colors.py), // +Y top (index 2)
-    createMaterial(colors.ny), // -Y bottom (index 3)
-    createMaterial(colors.pz), // +Z front (index 4)
-    createMaterial(colors.nz) // -Z back (index 5)
-  ]), [colors.nx, colors.ny, colors.nz, colors.px, colors.py, colors.pz])
+    return {
+      px: createStickerMaterial(colors.px),
+      nx: createStickerMaterial(colors.nx),
+      py: createStickerMaterial(colors.py),
+      ny: createStickerMaterial(colors.ny),
+      pz: createStickerMaterial(colors.pz),
+      nz: createStickerMaterial(colors.nz)
+    }
+  }, [colors.nx, colors.ny, colors.nz, colors.px, colors.py, colors.pz])
 
   useEffect(() => {
     return () => {
-      materials.forEach(material => material.dispose())
+      bodyMaterial.dispose()
+      Object.values(stickerMaterials).forEach(material => material.dispose())
     }
-  }, [materials])
+  }, [bodyMaterial, stickerMaterials])
 
   useFrame(() => {
     const group = groupRef.current
@@ -76,10 +131,28 @@ export const Cubie = memo(function Cubie({ position, colors, animation, onPointe
   return (
     <group ref={groupRef}>
       <group position={[posX, posY, posZ]}>
-        {/* Main cubie - use standard BoxGeometry with materials array */}
-        <mesh material={materials} onPointerDown={(event) => onPointerDown?.(event, position)}>
-          <boxGeometry args={[CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE]} />
-        </mesh>
+        <RoundedBox
+          args={[CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE]}
+          radius={BODY_RADIUS}
+          smoothness={BODY_SMOOTHNESS}
+          material={bodyMaterial}
+          onPointerDown={(event) => onPointerDown?.(event, position)}
+        />
+        {STICKER_FACES.map((face) => {
+          if (colors[face.key] === '#111111') return null
+
+          return (
+            <mesh
+              key={face.key}
+              position={face.position}
+              rotation={face.rotation}
+              material={stickerMaterials[face.key]}
+              onPointerDown={(event) => onPointerDown?.(event, position)}
+            >
+              <shapeGeometry args={[stickerShape]} />
+            </mesh>
+          )
+        })}
       </group>
     </group>
   )
