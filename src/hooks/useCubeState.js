@@ -1,10 +1,11 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import {
   createSolvedCube,
   applyMove,
   generateScramble,
-  isSolved as checkSolved,
-  getInverseMove
+  isSolved,
+  reverseMoves,
+  normalizeMoves
 } from '../utils/cubeLogic'
 
 export function useCubeState() {
@@ -13,120 +14,114 @@ export function useCubeState() {
   const [moveCount, setMoveCount] = useState(0)
   const [isAnimating, setIsAnimating] = useState(false)
   const [currentAnimation, setCurrentAnimation] = useState(null)
+  const cubiesRef = useRef(cubies)
+  const isAnimatingRef = useRef(false)
+  const solveQueueRef = useRef([])
+  const animationTokenRef = useRef(0)
+  const stateMovesRef = useRef([])
 
-  // Solve state
-  const isSolvingRef = useRef(false)
-  const solveMovesRef = useRef([])
+  useEffect(() => {
+    cubiesRef.current = cubies
+  }, [cubies])
 
-  // Start a single move
-  const move = useCallback((moveNotation) => {
+  const startMove = useCallback((moveNotation) => {
+    if (!moveNotation || isAnimatingRef.current) return false
+
+    isAnimatingRef.current = true
     setIsAnimating(true)
-    setCurrentAnimation(moveNotation)
+    animationTokenRef.current += 1
+    setCurrentAnimation({
+      move: moveNotation,
+      token: animationTokenRef.current
+    })
+
+    return true
   }, [])
 
-  // Called by Cube component when animation finishes
-  const onMoveComplete = useCallback((updatedCubies, completedMove) => {
-    setCubies(updatedCubies)
-    setCurrentAnimation(null)
-    setIsAnimating(false)
-    
-    if (completedMove) {
-      if (!isSolvingRef.current) {
-        setMoveHistory(prev => [...prev, completedMove])
-      }
-      setMoveCount(prev => prev + 1)
-    }
-    
-    // Check if solved BEFORE queueing next move
-    if (isSolvingRef.current && checkSolved(updatedCubies)) {
-      console.log('Solved! Stopping.')
-      isSolvingRef.current = false
-      solveMovesRef.current = []
-      setMoveHistory([])
-      return
-    }
-    
-    // Check if we have more solve moves to play
-    if (isSolvingRef.current && solveMovesRef.current.length > 0) {
-      const nextMove = solveMovesRef.current.shift()
-      setTimeout(() => {
-        move(nextMove)
-      }, 80)
-    } else if (isSolvingRef.current) {
-      isSolvingRef.current = false
-      solveMovesRef.current = []
-      setMoveHistory([])
-    }
-  }, [move])
+  // Apply a single move with animation
+  const move = useCallback((moveNotation) => {
+    return startMove(moveNotation)
+  }, [startMove])
 
-  // Scramble - instant, no animation, doesn't count toward move count
+  const completeMove = useCallback((moveNotation) => {
+    if (!moveNotation) return
+
+    const nextCubies = applyMove(cubiesRef.current, moveNotation)
+    const nextMoves = normalizeMoves([...stateMovesRef.current, moveNotation])
+    const solved = isSolved(nextCubies)
+
+    cubiesRef.current = nextCubies
+    setCubies(nextCubies)
+    setMoveHistory(prev => [...prev, moveNotation])
+    setMoveCount(prev => prev + 1)
+    stateMovesRef.current = solved ? [] : nextMoves
+    if (solved) {
+      solveQueueRef.current = []
+    }
+    isAnimatingRef.current = false
+    setIsAnimating(false)
+    setCurrentAnimation(null)
+  }, [])
+
+  // Scramble the cube
   const scramble = useCallback(() => {
     const moves = generateScramble(20)
+    solveQueueRef.current = []
+    isAnimatingRef.current = false
+
+    // Apply all scramble moves instantly
     let newCubies = createSolvedCube()
     for (const m of moves) {
       newCubies = applyMove(newCubies, m)
     }
-    setCubies(newCubies)
-    setMoveHistory(moves)
-    // Don't count scramble moves - reset to 0
-    setMoveCount(0)
-  }, [])
 
-  // Reset - fully reset to solved state
-  const reset = useCallback(() => {
-    // Kill any pending animations
-    setIsAnimating(false)
-    setCurrentAnimation(null)
-    
-    // Clear solve queue
-    isSolvingRef.current = false
-    solveMovesRef.current = []
-    
-    // Reset to solved cube
-    setCubies(createSolvedCube())
+    setCubies(newCubies)
+    cubiesRef.current = newCubies
     setMoveHistory([])
     setMoveCount(0)
+    stateMovesRef.current = normalizeMoves(moves)
+    setIsAnimating(false)
+    setCurrentAnimation(null)
   }, [])
 
-  // Solve - simple reverse of move history
+  // Reset to solved state
+  const reset = useCallback(() => {
+    solveQueueRef.current = []
+    isAnimatingRef.current = false
+    const solvedCubies = createSolvedCube()
+    setCubies(solvedCubies)
+    cubiesRef.current = solvedCubies
+    setMoveHistory([])
+    setMoveCount(0)
+    stateMovesRef.current = []
+    setIsAnimating(false)
+    setCurrentAnimation(null)
+  }, [])
+
   const solve = useCallback(() => {
-    // Don't solve if already solved
-    if (checkSolved(cubies)) {
-      return
-    }
-    
-    // Don't solve if no moves to reverse
-    if (!moveHistory || moveHistory.length === 0) {
-      return
-    }
+    if (isAnimatingRef.current || isSolved(cubies)) return
 
-    // Reverse each move to its inverse
-    const solution = [...moveHistory].reverse().map(m => getInverseMove(m))
-    
-    if (!solution || solution.length === 0) {
-      return
-    }
+    const solveMoves = reverseMoves(stateMovesRef.current)
+    const [firstMove, ...remainingMoves] = solveMoves
 
-    isSolvingRef.current = true
-    solveMovesRef.current = solution
-    
-    const firstMove = solveMovesRef.current.shift()
-    if (firstMove) {
-      move(firstMove)
-    }
-  }, [move, cubies, moveHistory])
+    if (!firstMove) return
 
-  // Check if solved during solve sequence
-  const checkDuringSolve = useCallback((currentCubies) => {
-    const solved = checkSolved(currentCubies)
-    console.log('checkDuringSolve called, isSolved:', solved, 'isSolving:', isSolvingRef.current, 'queue:', solveMovesRef.current.length)
-    if (isSolvingRef.current && solved) {
-      console.log('SOLVED! Stopping solve sequence')
-      isSolvingRef.current = false
-      solveMovesRef.current = []
-      setMoveHistory([])
+    setMoveHistory([])
+    setMoveCount(0)
+
+    solveQueueRef.current = remainingMoves
+
+    startMove(firstMove)
+  }, [cubies, startMove])
+
+  useEffect(() => {
+    if (isAnimating || currentAnimation !== null || solveQueueRef.current.length === 0) return
+
+    const nextMove = solveQueueRef.current.shift()
+    if (nextMove) {
+      startMove(nextMove)
     }
-  }, [])
+  }, [isAnimating, currentAnimation, startMove])
 
   return {
     cubies,
@@ -134,10 +129,9 @@ export function useCubeState() {
     moveCount,
     isAnimating,
     currentAnimation,
-    isSolved: checkSolved(cubies),
+    isSolved: isSolved(cubies),
     move,
-    onMoveComplete,
-    checkDuringSolve,
+    completeMove,
     scramble,
     reset,
     solve

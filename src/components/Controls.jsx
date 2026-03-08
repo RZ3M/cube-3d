@@ -1,41 +1,66 @@
 import React from 'react'
 
-export function Controls({ onScramble, onSolve, onReset, moveCount, isSolved, isAnimating }) {
+export function Controls({
+  onScramble,
+  onSolve,
+  onReset,
+  moveCount,
+  isSolved,
+  isAnimating,
+  isTouchDevice
+}) {
+  const hintText = isTouchDevice
+    ? 'Touch and drag a cubie to turn the cube.'
+    : "Drag a cubie to turn. Keys: `R L U D F B M E S`, hold `Shift` for inverse."
+
+  const statusText = isSolved && moveCount > 0 ? 'Solved' : isAnimating ? 'Turning' : 'Ready'
+
   return (
-    <div className="controls">
-      <div className="controls-row">
-        <button
-          onClick={onScramble}
-          disabled={isAnimating}
-          className="btn btn-scramble"
-        >
-          Scramble
-        </button>
-        <button
-          onClick={onSolve}
-          disabled={isAnimating || isSolved}
-          className="btn btn-solve"
-        >
-          Solve
-        </button>
-        <button
-          onClick={onReset}
-          disabled={isAnimating}
-          className="btn btn-reset"
-        >
-          Reset
-        </button>
-      </div>
-      <div className="stats">
-        <span className="move-counter">Moves: {moveCount}</span>
-        {isSolved && moveCount > 0 && (
-          <span className="solved-text">Solved!</span>
-        )}
-      </div>
-      <div className="instructions">
-        <p>Click and drag on a face to rotate</p>
-        <p>Or use keyboard: R, L, U, D, F, B (Shift for counter-clockwise)</p>
-      </div>
+    <div className="hud">
+      <section className="hero-card glass-panel">
+        <div className="hero-copy">
+          <span className="eyebrow">Interactive 3D Cube</span>
+          <h1>Cube, refined.</h1>
+          <p>Drag layers directly. Scramble instantly. Solve by reversing tracked moves.</p>
+        </div>
+        <div className="hero-meta">
+          <div className="metric">
+            <span className="metric-label">Moves</span>
+            <strong>{moveCount}</strong>
+          </div>
+          <div className={`metric ${isSolved && moveCount > 0 ? 'is-solved' : ''}`}>
+            <span className="metric-label">State</span>
+            <strong>{statusText}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="control-dock glass-panel">
+        <div className="controls-row">
+          <button
+            onClick={onScramble}
+            disabled={isAnimating}
+            className="btn btn-secondary"
+          >
+            Scramble
+          </button>
+          <button
+            onClick={onSolve}
+            disabled={isAnimating || isSolved}
+            className="btn btn-primary"
+          >
+            Solve
+          </button>
+          <button
+            onClick={onReset}
+            disabled={isAnimating}
+            className="btn btn-tertiary"
+          >
+            Reset
+          </button>
+        </div>
+        <p className="interaction-hint">{hintText}</p>
+      </section>
     </div>
   )
 }

@@ -1,231 +1,312 @@
-import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react'
+import React, { useRef, useEffect, useCallback } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Cubie } from './Cubie'
-import { MOVES, applyMove } from '../utils/cubeLogic'
+import { MOVES } from '../utils/cubeLogic'
 import * as THREE from 'three'
 
 const ANIMATION_DURATION = 250 // ms
+const DRAG_THRESHOLD = 12
+const DRAG_SENSITIVITY = 0.45
+const SNAP_THRESHOLD = 45
+const AXES = {
+  x: {
+    index: 0,
+    vector: new THREE.Vector3(1, 0, 0),
+    positiveMove: 'R',
+    negativeMove: 'L',
+    middleMove: 'M',
+    noPrimeSign: { 1: -1, 0: 1, [-1]: 1 }
+  },
+  y: {
+    index: 1,
+    vector: new THREE.Vector3(0, 1, 0),
+    positiveMove: 'U',
+    negativeMove: 'D',
+    middleMove: 'E',
+    noPrimeSign: { 1: -1, 0: 1, [-1]: 1 }
+  },
+  z: {
+    index: 2,
+    vector: new THREE.Vector3(0, 0, 1),
+    positiveMove: 'F',
+    negativeMove: 'B',
+    middleMove: 'S',
+    noPrimeSign: { 1: -1, 0: -1, [-1]: 1 }
+  }
+}
 
-export function Cube({ cubies, onMove, onMoveComplete, checkDuringSolve, currentAnimation, isAnimating }) {
+function getMoveNotation(axis, layerValue, rotationSign) {
+  const axisConfig = AXES[axis]
+  const baseMove = layerValue === 0
+    ? axisConfig.middleMove
+    : layerValue === 1
+      ? axisConfig.positiveMove
+      : axisConfig.negativeMove
+  const noPrimeSign = axisConfig.noPrimeSign[layerValue]
+
+  return rotationSign === noPrimeSign ? baseMove : `${baseMove}'`
+}
+
+function parseMoveNotation(moveNotation) {
+  const isPrime = moveNotation.includes("'")
+  const baseMove = moveNotation.replace("'", "")
+
+  switch (baseMove) {
+    case 'R':
+      return { axis: 'x', layerValue: 1, targetAngle: isPrime ? 90 : -90 }
+    case 'L':
+      return { axis: 'x', layerValue: -1, targetAngle: isPrime ? -90 : 90 }
+    case 'U':
+      return { axis: 'y', layerValue: 1, targetAngle: isPrime ? 90 : -90 }
+    case 'D':
+      return { axis: 'y', layerValue: -1, targetAngle: isPrime ? -90 : 90 }
+    case 'F':
+      return { axis: 'z', layerValue: 1, targetAngle: isPrime ? 90 : -90 }
+    case 'B':
+      return { axis: 'z', layerValue: -1, targetAngle: isPrime ? -90 : 90 }
+    case 'M':
+      return { axis: 'x', layerValue: 0, targetAngle: isPrime ? -90 : 90 }
+    case 'E':
+      return { axis: 'y', layerValue: 0, targetAngle: isPrime ? -90 : 90 }
+    case 'S':
+      return { axis: 'z', layerValue: 0, targetAngle: isPrime ? 90 : -90 }
+    default:
+      return null
+  }
+}
+
+export function Cube({
+  cubies,
+  onMove,
+  onAnimationComplete,
+  onDragStateChange,
+  currentAnimation,
+  isAnimating
+}) {
   const groupRef = useRef()
-  const rotatingGroupRef = useRef()
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragStart, setDragStart] = useState(null)
-  const [dragFace, setDragFace] = useState(null)
-  const [dragCubie, setDragCubie] = useState(null)
-  const [animState, setAnimState] = useState(null) // { axis, layerValue, targetAngle, startTime }
-  const animStateRef = useRef(null) // Track animation state without causing re-renders
-  const { camera, gl } = useThree()
+  const animationRef = useRef(null)
+  const didCompleteRef = useRef(false)
+  const dragStateRef = useRef(null)
+  const { camera, size } = useThree()
 
   // Handle animation frame
   useFrame(() => {
-    if (!animState || !rotatingGroupRef.current) return
+    const animation = animationRef.current
+    if (!animation) return
 
-    const elapsed = performance.now() - animState.startTime
+    if (animation.mode === 'interactive') {
+      return
+    }
+
+    const elapsed = performance.now() - animation.startTime
     const progress = Math.min(elapsed / ANIMATION_DURATION, 1)
 
     // Easing function (ease-out cubic)
     const eased = 1 - Math.pow(1 - progress, 3)
+    animation.currentAngle = animation.startAngle + (animation.targetAngle - animation.startAngle) * eased
 
-    const currentAngle = animState.targetAngle * eased
-
-    // Apply rotation to the group
-    const axisVec = new THREE.Vector3(
-      animState.axis === 'x' ? 1 : 0,
-      animState.axis === 'y' ? 1 : 0,
-      animState.axis === 'z' ? 1 : 0
-    )
-    rotatingGroupRef.current.rotation.set(0, 0, 0)
-    rotatingGroupRef.current.rotateOnWorldAxis(axisVec, THREE.MathUtils.degToRad(currentAngle))
-
-    // Animation complete
     if (progress >= 1) {
-      const move = animStateRef.current.move
-      // Apply the move to cubies data
-      const updatedCubies = applyMove(cubies, move)
-      // Clear animation state
-      rotatingGroupRef.current.rotation.set(0, 0, 0)
-      setAnimState(null)
-      animStateRef.current = null
-      // Notify parent to update state (pass the move that was just completed)
-      if (onMoveComplete) {
-        onMoveComplete(updatedCubies, move)
-        // Check if solved during solve sequence - stop if we reach solved state
-        if (checkDuringSolve) {
-          checkDuringSolve(updatedCubies)
-        }
+      if (didCompleteRef.current) return
+
+      didCompleteRef.current = true
+      const completedMove = animation.commitMove
+
+      animationRef.current = null
+      onDragStateChange?.(false)
+      if (completedMove) {
+        onAnimationComplete?.(completedMove)
       }
     }
   })
 
   // Start animation when currentAnimation changes
   useEffect(() => {
-    if (!currentAnimation || animStateRef.current) return
-
-    // Parse the move
-    const isPrime = currentAnimation.includes("'")
-    const baseMove = currentAnimation.replace("'", "")
-
-    let axis, layerValue, clockwise
-    switch (baseMove) {
-      case 'R':
-        axis = 'x'; layerValue = 1; clockwise = !isPrime; break
-      case 'L':
-        axis = 'x'; layerValue = -1; clockwise = isPrime; break
-      case 'U':
-        axis = 'y'; layerValue = 1; clockwise = !isPrime; break
-      case 'D':
-        axis = 'y'; layerValue = -1; clockwise = isPrime; break
-      case 'F':
-        axis = 'z'; layerValue = 1; clockwise = !isPrime; break
-      case 'B':
-        axis = 'z'; layerValue = -1; clockwise = isPrime; break
-      default:
-        return
+    if (!currentAnimation) {
+      if (animationRef.current?.mode === 'auto') {
+        animationRef.current = null
+      }
+      return
     }
 
-    const targetAngle = clockwise ? -90 : 90 // Negative for clockwise in Three.js
+    const moveNotation = currentAnimation.move
+    const parsedMove = parseMoveNotation(moveNotation)
+    if (!parsedMove) return
 
-    const newAnimState = {
-      axis,
-      layerValue,
-      targetAngle,
-      startTime: performance.now(),
-      move: currentAnimation
+    didCompleteRef.current = false
+    animationRef.current = {
+      mode: 'auto',
+      axis: parsedMove.axis,
+      layerValue: parsedMove.layerValue,
+      startAngle: 0,
+      targetAngle: parsedMove.targetAngle,
+      currentAngle: 0,
+      commitMove: moveNotation,
+      startTime: performance.now()
     }
-    setAnimState(newAnimState)
-    animStateRef.current = newAnimState
   }, [currentAnimation])
 
-  // Get cubies in a specific layer
-  const getCubiesInLayer = useCallback((axis, layerValue) => {
-    const axisIndex = { x: 0, y: 1, z: 2 }[axis]
-    return cubies.filter(c => c.position[axisIndex] === layerValue)
-  }, [cubies])
+  const projectWorldVectorToScreen = useCallback((origin, vector) => {
+    const start = origin.clone().project(camera)
+    const end = origin.clone().add(vector).project(camera)
 
-  // Determine move from drag
-  const getMoveFromDrag = useCallback((startPoint, endPoint, faceNormal, cubiePosition) => {
-    const dragVector = new THREE.Vector3().subVectors(endPoint, startPoint)
-    const dragLength = dragVector.length()
+    return new THREE.Vector2(
+      (end.x - start.x) * size.width * 0.5,
+      (start.y - end.y) * size.height * 0.5
+    )
+  }, [camera, size.height, size.width])
 
-    if (dragLength < 0.2) return null // Not enough drag
+  const resolveDragMove = useCallback((dragState, dragVector, minScore = 0.5) => {
+    const normalizedDrag = dragVector.clone().normalize()
+    let bestCandidate = null
+    let bestScore = minScore
 
-    dragVector.normalize()
+    for (const axis of Object.keys(AXES)) {
+      const { index, vector } = AXES[axis]
+      const layerValue = dragState.position[index]
 
-    // Determine rotation axis (perpendicular to both face normal and drag direction)
-    const cross = new THREE.Vector3().crossVectors(faceNormal, dragVector)
-    const absX = Math.abs(cross.x)
-    const absY = Math.abs(cross.y)
-    const absZ = Math.abs(cross.z)
+      for (const rotationSign of [-1, 1]) {
+        const moveNotation = getMoveNotation(axis, layerValue, rotationSign)
+        const motionWorld = vector.clone().cross(dragState.worldPoint).multiplyScalar(rotationSign)
+        const motionScreen = projectWorldVectorToScreen(dragState.worldPoint, motionWorld)
 
-    let axis, layerValue, clockwise
+        if (motionScreen.lengthSq() < 1e-4) continue
 
-    if (absX >= absY && absX >= absZ) {
-      axis = 'x'
-      layerValue = Math.round(cubiePosition[0])
-      clockwise = cross.x > 0
-    } else if (absY >= absX && absY >= absZ) {
-      axis = 'y'
-      layerValue = Math.round(cubiePosition[1])
-      clockwise = cross.y > 0
-    } else {
-      axis = 'z'
-      layerValue = Math.round(cubiePosition[2])
-      clockwise = cross.z > 0
+        const score = motionScreen.normalize().dot(normalizedDrag)
+        if (score > bestScore) {
+          bestCandidate = {
+            axis,
+            layerValue,
+            moveNotation,
+            direction: motionScreen.clone(),
+            rotationSign
+          }
+          bestScore = score
+        }
+      }
     }
 
-    // Map axis + layer + direction to move notation
-    let move
-    if (axis === 'x') {
-      if (layerValue === 1) move = clockwise ? 'R' : "R'"
-      else if (layerValue === -1) move = clockwise ? "L'" : 'L'
-      else return null
-    } else if (axis === 'y') {
-      if (layerValue === 1) move = clockwise ? 'U' : "U'"
-      else if (layerValue === -1) move = clockwise ? "D'" : 'D'
-      else return null
-    } else if (axis === 'z') {
-      if (layerValue === 1) move = clockwise ? 'F' : "F'"
-      else if (layerValue === -1) move = clockwise ? "B'" : 'B'
-      else return null
-    }
+    return bestCandidate
+  }, [projectWorldVectorToScreen])
 
-    return move
-  }, [])
-
-  // Handle pointer down
-  const handlePointerDown = useCallback((event) => {
-    if (isAnimating) return
+  const handlePointerDown = useCallback((event, position) => {
+    if (isAnimating || animationRef.current || dragStateRef.current) return
 
     event.stopPropagation()
 
-    const intersects = event.intersections
-    if (intersects.length === 0) return
+    if (!event.face) return
 
-    const intersection = intersects[0]
-    const point = intersection.point.clone()
-    const faceNormal = intersection.face.normal.clone()
-    faceNormal.transformDirection(intersection.object.matrixWorld)
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      position: [...position],
+      worldPoint: event.point.clone()
+    }
+    onDragStateChange?.(true)
+  }, [isAnimating, onDragStateChange])
 
-    setIsDragging(true)
-    setDragStart(point)
-    setDragFace(faceNormal)
-    setDragCubie(intersection.object.position.clone().toArray())
+  useEffect(() => {
+    const handlePointerMove = (event) => {
+      const dragState = dragStateRef.current
+      if (!dragState || dragState.pointerId !== event.pointerId || isAnimating) return
 
-    // Capture pointer
-    gl.domElement.setPointerCapture(event.pointerId)
-  }, [isAnimating, gl])
+      const dragVector = new THREE.Vector2(
+        event.clientX - dragState.startX,
+        event.clientY - dragState.startY
+      )
 
-  // Handle pointer move
-  const handlePointerMove = useCallback((event) => {
-    if (!isDragging || isAnimating || !dragStart) return
+      if (!dragState.activeMove) {
+        if (dragVector.length() < DRAG_THRESHOLD) return
 
-    // Get 3D point from mouse
-    const raycaster = new THREE.Raycaster()
-    const mouse = new THREE.Vector2(
-      (event.clientX / window.innerWidth) * 2 - 1,
-      -(event.clientY / window.innerHeight) * 2 + 1
-    )
-    raycaster.setFromCamera(mouse, camera)
+        const candidate = resolveDragMove(dragState, dragVector)
+        if (!candidate) return
 
-    // Project onto a plane at the drag start point
-    const plane = new THREE.Plane()
-    plane.setFromNormalAndCoplanarPoint(
-      camera.getWorldDirection(new THREE.Vector3()).negate(),
-      dragStart
-    )
+        dragState.activeMove = candidate
+        didCompleteRef.current = false
+        animationRef.current = {
+          mode: 'interactive',
+          axis: candidate.axis,
+          layerValue: candidate.layerValue,
+          currentAngle: 0
+        }
+      }
 
-    const endPoint = new THREE.Vector3()
-    raycaster.ray.intersectPlane(plane, endPoint)
+      const direction = dragState.activeMove.direction.clone().normalize()
+      const projectedPixels = dragVector.dot(direction)
+      const currentAngle = THREE.MathUtils.clamp(
+        projectedPixels * DRAG_SENSITIVITY * dragState.activeMove.rotationSign,
+        -135,
+        135
+      )
 
-    if (endPoint) {
-      const move = getMoveFromDrag(dragStart, endPoint, dragFace, dragCubie)
-      if (move) {
-        onMove(move)
-        setIsDragging(false)
-        setDragStart(null)
-        setDragFace(null)
-        setDragCubie(null)
-        gl.domElement.releasePointerCapture(event.pointerId)
+      if (animationRef.current?.mode === 'interactive') {
+        animationRef.current.currentAngle = currentAngle
       }
     }
-  }, [isDragging, isAnimating, dragStart, dragFace, dragCubie, camera, getMoveFromDrag, onMove, gl])
 
-  // Handle pointer up
-  const handlePointerUp = useCallback((event) => {
-    setIsDragging(false)
-    setDragStart(null)
-    setDragFace(null)
-    setDragCubie(null)
-    if (gl.domElement) {
-      gl.domElement.releasePointerCapture(event.pointerId)
+    const handlePointerEnd = (event) => {
+      const dragState = dragStateRef.current
+      if (!dragState || dragState.pointerId !== event.pointerId) return
+
+      const activeAnimation = animationRef.current
+      const activeMove = dragState.activeMove
+
+      dragStateRef.current = null
+
+      if (!activeMove || !activeAnimation || activeAnimation.mode !== 'interactive') {
+        animationRef.current = null
+        onDragStateChange?.(false)
+        return
+      }
+
+      const releaseAngle = activeAnimation.currentAngle
+      const shouldCommit = Math.abs(releaseAngle) >= SNAP_THRESHOLD
+
+      if (!shouldCommit) {
+        didCompleteRef.current = false
+        animationRef.current = {
+          ...activeAnimation,
+          mode: 'settle',
+          startAngle: releaseAngle,
+          targetAngle: 0,
+          commitMove: null,
+          startTime: performance.now()
+        }
+        return
+      }
+
+      const rotationSign = releaseAngle >= 0 ? 1 : -1
+      const moveNotation = getMoveNotation(activeMove.axis, activeMove.layerValue, rotationSign)
+      const parsedMove = parseMoveNotation(moveNotation)
+
+      didCompleteRef.current = false
+      animationRef.current = {
+        mode: 'settle',
+        axis: activeMove.axis,
+        layerValue: activeMove.layerValue,
+        startAngle: releaseAngle,
+        targetAngle: parsedMove.targetAngle,
+        currentAngle: releaseAngle,
+        commitMove: moveNotation,
+        startTime: performance.now()
+      }
     }
-  }, [gl])
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerEnd)
+    window.addEventListener('pointercancel', handlePointerEnd)
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerEnd)
+      window.removeEventListener('pointercancel', handlePointerEnd)
+    }
+  }, [isAnimating, onDragStateChange, resolveDragMove])
 
   // Handle keyboard controls
   useEffect(() => {
     const handleKeyDown = (event) => {
-      if (isAnimating) return
+      if (isAnimating || animationRef.current || dragStateRef.current) return
 
       const key = event.key.toUpperCase()
       if (MOVES.includes(key)) {
@@ -235,55 +316,27 @@ export function Cube({ cubies, onMove, onMoveComplete, checkDuringSolve, current
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onMove, isAnimating])
+  }, [isAnimating, onMove])
 
-  // Memoize layer cubies to prevent flickering during animation
-  const { rotating, static: staticCubies } = useMemo(() => {
-    if (!animState) return { rotating: [], static: cubies }
-
-    const axisIndex = { x: 0, y: 1, z: 2 }[animState.axis]
-    const rotating = cubies.filter(c => c.position[axisIndex] === animState.layerValue)
-    const staticCubies = cubies.filter(c => c.position[axisIndex] !== animState.layerValue)
-
-    return { rotating, static: staticCubies }
-  }, [cubies, animState])
-
-  // Memoize static cubies render list
-  const staticCubiesElements = useMemo(() => (
-    staticCubies.map(cubie => (
-      <Cubie
-        key={cubie.id}
-        position={cubie.position}
-        colors={cubie.colors}
-      />
-    ))
-  ), [staticCubies])
-
-  // Memoize rotating cubies render list
-  const rotatingCubiesElements = useMemo(() => (
-    rotating.map(cubie => (
-      <Cubie
-        key={cubie.id}
-        position={cubie.position}
-        colors={cubie.colors}
-      />
-    ))
-  ), [rotating])
+  useEffect(() => {
+    if (!isAnimating) return
+    if (dragStateRef.current) {
+      dragStateRef.current = null
+      onDragStateChange?.(false)
+    }
+  }, [isAnimating, onDragStateChange])
 
   return (
-    <group
-      ref={groupRef}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerUp}
-    >
-      {/* Static cubies */}
-      {staticCubiesElements}
-      {/* Rotating cubies in animated group */}
-      <group ref={rotatingGroupRef}>
-        {rotatingCubiesElements}
-      </group>
+    <group ref={groupRef}>
+      {cubies.map(cubie => (
+        <Cubie
+          key={cubie.id}
+          position={cubie.position}
+          colors={cubie.colors}
+          animation={animationRef}
+          onPointerDown={handlePointerDown}
+        />
+      ))}
     </group>
   )
 }

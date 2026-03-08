@@ -1,87 +1,160 @@
-import React, { useMemo } from 'react'
+import React, { memo, useEffect, useMemo, useRef } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { RoundedBox } from '@react-three/drei'
 import * as THREE from 'three'
 
-const CUBIE_SIZE = 1
-const ROUNDING_RADIUS = 0.08
-const STICKER_INSET = 0.06
-const STICKER_ELEVATION = 0.002
+const CUBIE_SIZE = 0.98
+const GAP = 0.0
+const BODY_RADIUS = 0.1
+const BODY_SMOOTHNESS = 6
+const STICKER_SIZE = 0.8
+const STICKER_INSET = CUBIE_SIZE / 2 + 0.001
+const STICKER_RADIUS = 0.085
 
-// Shared black material - created once
-const blackMaterial = new THREE.MeshStandardMaterial({
-  color: '#111111',
-  metalness: 0.15,
-  roughness: 0.35
-})
-
-// Shared sticker geometry - created once
-const stickerGeometry = new THREE.PlaneGeometry(
-  CUBIE_SIZE - (STICKER_INSET * 2),
-  CUBIE_SIZE - (STICKER_INSET * 2)
-)
-
-// Material cache to prevent recreation
-const materialCache = new Map()
-
-function getStickerMaterial(color) {
-  if (!materialCache.has(color)) {
-    materialCache.set(color, new THREE.MeshStandardMaterial({
-      color: color,
-      roughness: 0.22,
-      metalness: 0.02
-    }))
-  }
-  return materialCache.get(color)
+// Material properties for realistic plastic look
+const MATERIAL_PROPS = {
+  metalness: 0.02,
+  roughness: 0.26,
+  clearcoat: 0.18,
+  clearcoatRoughness: 0.2
 }
 
-// Memoized Cubie component
-export const Cubie = React.memo(function Cubie({ position, colors }) {
-  // Memoize sticker data to prevent recalculation
-  const stickerData = useMemo(() => {
-    const result = []
-    if (colors.px !== '#111111') {
-      result.push({ color: colors.px, pos: [CUBIE_SIZE/2 + STICKER_ELEVATION, 0, 0], rot: [0, Math.PI/2, 0] })
+const AXIS_INDEX = { x: 0, y: 1, z: 2 }
+const STICKER_FACES = [
+  { key: 'px', position: [STICKER_INSET, 0, 0], rotation: [0, Math.PI / 2, 0] },
+  { key: 'nx', position: [-STICKER_INSET, 0, 0], rotation: [0, -Math.PI / 2, 0] },
+  { key: 'py', position: [0, STICKER_INSET, 0], rotation: [-Math.PI / 2, 0, 0] },
+  { key: 'ny', position: [0, -STICKER_INSET, 0], rotation: [Math.PI / 2, 0, 0] },
+  { key: 'pz', position: [0, 0, STICKER_INSET], rotation: [0, 0, 0] },
+  { key: 'nz', position: [0, 0, -STICKER_INSET], rotation: [0, Math.PI, 0] }
+]
+
+function createRoundedStickerShape(size, radius) {
+  const half = size / 2
+  const r = Math.min(radius, half)
+  const shape = new THREE.Shape()
+
+  shape.moveTo(-half + r, -half)
+  shape.lineTo(half - r, -half)
+  shape.quadraticCurveTo(half, -half, half, -half + r)
+  shape.lineTo(half, half - r)
+  shape.quadraticCurveTo(half, half, half - r, half)
+  shape.lineTo(-half + r, half)
+  shape.quadraticCurveTo(-half, half, -half, half - r)
+  shape.lineTo(-half, -half + r)
+  shape.quadraticCurveTo(-half, -half, -half + r, -half)
+
+  return shape
+}
+
+export const Cubie = memo(function Cubie({ position, colors, animation, onPointerDown }) {
+  const groupRef = useRef()
+  const axisVecRef = useRef(new THREE.Vector3())
+
+  // Calculate actual position with gap
+  const posX = position[0] * (1 + GAP)
+  const posY = position[1] * (1 + GAP)
+  const posZ = position[2] * (1 + GAP)
+  const stickerShape = useMemo(() => createRoundedStickerShape(STICKER_SIZE, STICKER_RADIUS), [])
+
+  const bodyMaterial = useMemo(() => new THREE.MeshPhysicalMaterial({
+    color: '#a6b2c3',
+    metalness: 0.02,
+    roughness: 0.48,
+    transmission: 0.54,
+    transparent: true,
+    opacity: 0.82,
+    thickness: 1.25,
+    ior: 1.36,
+    reflectivity: 0.16,
+    attenuationDistance: 0.28,
+    attenuationColor: '#93a1b7',
+    clearcoat: 0.4,
+    clearcoatRoughness: 0.28,
+    envMapIntensity: 0.28
+  }), [])
+
+  const stickerMaterials = useMemo(() => {
+    const createStickerMaterial = (color) => new THREE.MeshPhysicalMaterial({
+      color,
+      metalness: MATERIAL_PROPS.metalness,
+      roughness: MATERIAL_PROPS.roughness,
+      clearcoat: MATERIAL_PROPS.clearcoat,
+      clearcoatRoughness: MATERIAL_PROPS.clearcoatRoughness,
+      side: THREE.DoubleSide,
+      envMapIntensity: 0.12,
+      transmission: 0,
+      transparent: false,
+      opacity: 1
+    })
+
+    return {
+      px: createStickerMaterial(colors.px),
+      nx: createStickerMaterial(colors.nx),
+      py: createStickerMaterial(colors.py),
+      ny: createStickerMaterial(colors.ny),
+      pz: createStickerMaterial(colors.pz),
+      nz: createStickerMaterial(colors.nz)
     }
-    if (colors.nx !== '#111111') {
-      result.push({ color: colors.nx, pos: [-CUBIE_SIZE/2 - STICKER_ELEVATION, 0, 0], rot: [0, -Math.PI/2, 0] })
+  }, [colors.nx, colors.ny, colors.nz, colors.px, colors.py, colors.pz])
+
+  useEffect(() => {
+    return () => {
+      bodyMaterial.dispose()
+      Object.values(stickerMaterials).forEach(material => material.dispose())
     }
-    if (colors.py !== '#111111') {
-      result.push({ color: colors.py, pos: [0, CUBIE_SIZE/2 + STICKER_ELEVATION, 0], rot: [-Math.PI/2, 0, 0] })
-    }
-    if (colors.ny !== '#111111') {
-      result.push({ color: colors.ny, pos: [0, -CUBIE_SIZE/2 - STICKER_ELEVATION, 0], rot: [Math.PI/2, 0, 0] })
-    }
-    if (colors.pz !== '#111111') {
-      result.push({ color: colors.pz, pos: [0, 0, CUBIE_SIZE/2 + STICKER_ELEVATION], rot: [0, 0, 0] })
-    }
-    if (colors.nz !== '#111111') {
-      result.push({ color: colors.nz, pos: [0, 0, -CUBIE_SIZE/2 - STICKER_ELEVATION], rot: [0, Math.PI, 0] })
-    }
-    return result
-  }, [colors.px, colors.nx, colors.py, colors.ny, colors.pz, colors.nz])
+  }, [bodyMaterial, stickerMaterials])
+
+  useFrame(() => {
+    const group = groupRef.current
+    if (!group) return
+
+    group.rotation.set(0, 0, 0)
+
+    const currentAnimation = animation?.current
+    if (!currentAnimation) return
+
+    const axisIndex = AXIS_INDEX[currentAnimation.axis]
+    if (position[axisIndex] !== currentAnimation.layerValue) return
+
+    axisVecRef.current.set(
+      currentAnimation.axis === 'x' ? 1 : 0,
+      currentAnimation.axis === 'y' ? 1 : 0,
+      currentAnimation.axis === 'z' ? 1 : 0
+    )
+
+    group.rotateOnWorldAxis(
+      axisVecRef.current,
+      THREE.MathUtils.degToRad(currentAnimation.currentAngle)
+    )
+  })
 
   return (
-    <group position={position}>
-      {/* Black rounded box body */}
-      <RoundedBox 
-        args={[CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE]} 
-        radius={ROUNDING_RADIUS} 
-        smoothness={4}
-      >
-        <primitive object={blackMaterial} attach="material" />
-      </RoundedBox>
-      
-      {/* Colored stickers */}
-      {stickerData.map((sticker, i) => (
-        <mesh 
-          key={i} 
-          position={sticker.pos} 
-          rotation={sticker.rot}
-          geometry={stickerGeometry}
-        >
-          <primitive object={getStickerMaterial(sticker.color)} attach="material" />
-        </mesh>
-      ))}
+    <group ref={groupRef}>
+      <group position={[posX, posY, posZ]}>
+        <RoundedBox
+          args={[CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE]}
+          radius={BODY_RADIUS}
+          smoothness={BODY_SMOOTHNESS}
+          material={bodyMaterial}
+          onPointerDown={(event) => onPointerDown?.(event, position)}
+        />
+        {STICKER_FACES.map((face) => {
+          if (colors[face.key] === '#111111') return null
+
+          return (
+            <mesh
+              key={face.key}
+              position={face.position}
+              rotation={face.rotation}
+              material={stickerMaterials[face.key]}
+              onPointerDown={(event) => onPointerDown?.(event, position)}
+            >
+              <shapeGeometry args={[stickerShape]} />
+            </mesh>
+          )
+        })}
+      </group>
     </group>
   )
 })
