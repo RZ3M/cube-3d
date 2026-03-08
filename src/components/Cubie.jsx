@@ -81,6 +81,7 @@ export const Cubie = memo(function Cubie({ position, colors, animation, onPointe
       roughness: MATERIAL_PROPS.roughness,
       clearcoat: MATERIAL_PROPS.clearcoat,
       clearcoatRoughness: MATERIAL_PROPS.clearcoatRoughness,
+      side: THREE.DoubleSide,
       envMapIntensity: 0.12,
       transmission: 0,
       transparent: false,
