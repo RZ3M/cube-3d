@@ -13,13 +13,15 @@ export function Controls({
     ? 'Touch and drag a cubie to turn the cube.'
     : "Drag a cubie to turn. Keys: `R L U D F B M E S`, hold `Shift` for inverse."
 
+  const statusText = isSolved && moveCount > 0 ? 'Solved' : isAnimating ? 'Turning' : 'Ready'
+
   return (
     <div className="hud">
       <section className="hero-card glass-panel">
         <div className="hero-copy">
           <span className="eyebrow">Interactive 3D Cube</span>
           <h1>Cube, refined.</h1>
-          <p>Drag layers directly. Scramble instantly. Solve cleanly.</p>
+          <p>Drag layers directly. Scramble instantly. Solve by reversing tracked moves.</p>
         </div>
         <div className="hero-meta">
           <div className="metric">
@@ -28,7 +30,7 @@ export function Controls({
           </div>
           <div className={`metric ${isSolved && moveCount > 0 ? 'is-solved' : ''}`}>
             <span className="metric-label">State</span>
-            <strong>{isSolved && moveCount > 0 ? 'Solved' : isAnimating ? 'Turning' : 'Ready'}</strong>
+            <strong>{statusText}</strong>
           </div>
         </div>
       </section>

@@ -24,6 +24,7 @@ export const FACE_COLORS = {
 
 // Move notation
 export const MOVES = ['R', 'L', 'U', 'D', 'F', 'B', 'M', 'E', 'S']
+export const FACE_TURN_MOVES = ['R', "R'", 'L', "L'", 'U', "U'", 'D', "D'", 'F', "F'", 'B', "B'"]
 export const MOVE_INVERSES = {
   R: "R'",
   L: "L'",
@@ -341,4 +342,47 @@ export function getInverseMove(move) {
 // Reverse a sequence of moves (for solving)
 export function reverseMoves(moves) {
   return moves.map(move => getInverseMove(move)).reverse()
+}
+
+function moveToQuarterTurns(move) {
+  return move.includes("'") ? 3 : 1
+}
+
+function quarterTurnsToMoves(baseMove, quarterTurns) {
+  const normalized = ((quarterTurns % 4) + 4) % 4
+
+  if (normalized === 0) return []
+  if (normalized === 1) return [baseMove]
+  if (normalized === 2) return [baseMove, baseMove]
+
+  return [`${baseMove}'`]
+}
+
+// Reduce adjacent turns on the same face and expand doubles back to quarter turns.
+export function normalizeMoves(moves) {
+  const reduced = []
+
+  for (const move of moves) {
+    if (!move) continue
+
+    const baseMove = move.replace("'", '')
+    const quarterTurns = moveToQuarterTurns(move)
+    const previous = reduced[reduced.length - 1]
+
+    if (previous?.baseMove === baseMove) {
+      previous.quarterTurns = (previous.quarterTurns + quarterTurns) % 4
+      if (previous.quarterTurns === 0) {
+        reduced.pop()
+      }
+      continue
+    }
+
+    reduced.push({ baseMove, quarterTurns })
+  }
+
+  return reduced.flatMap(({ baseMove, quarterTurns }) => quarterTurnsToMoves(baseMove, quarterTurns))
+}
+
+export function applyMoves(cubies, moves) {
+  return moves.reduce((state, move) => applyMove(state, move), cubies)
 }

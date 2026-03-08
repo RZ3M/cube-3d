@@ -128,7 +128,8 @@ export function Cube({
       return
     }
 
-    const parsedMove = parseMoveNotation(currentAnimation)
+    const moveNotation = currentAnimation.move
+    const parsedMove = parseMoveNotation(moveNotation)
     if (!parsedMove) return
 
     didCompleteRef.current = false
@@ -139,7 +140,7 @@ export function Cube({
       startAngle: 0,
       targetAngle: parsedMove.targetAngle,
       currentAngle: 0,
-      commitMove: currentAnimation,
+      commitMove: moveNotation,
       startTime: performance.now()
     }
   }, [currentAnimation])

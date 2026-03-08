@@ -4,7 +4,8 @@ import {
   applyMove,
   generateScramble,
   isSolved,
-  reverseMoves
+  reverseMoves,
+  normalizeMoves
 } from '../utils/cubeLogic'
 
 export function useCubeState() {
@@ -13,16 +14,21 @@ export function useCubeState() {
   const [moveCount, setMoveCount] = useState(0)
   const [isAnimating, setIsAnimating] = useState(false)
   const [currentAnimation, setCurrentAnimation] = useState(null)
-  const [scrambleMoves, setScrambleMoves] = useState([])
   const isAnimatingRef = useRef(false)
   const solveQueueRef = useRef([])
+  const animationTokenRef = useRef(0)
+  const stateMovesRef = useRef([])
 
   const startMove = useCallback((moveNotation) => {
     if (!moveNotation || isAnimatingRef.current) return false
 
     isAnimatingRef.current = true
     setIsAnimating(true)
-    setCurrentAnimation(moveNotation)
+    animationTokenRef.current += 1
+    setCurrentAnimation({
+      move: moveNotation,
+      token: animationTokenRef.current
+    })
 
     return true
   }, [])
@@ -38,6 +44,7 @@ export function useCubeState() {
     setCubies(prev => applyMove(prev, moveNotation))
     setMoveHistory(prev => [...prev, moveNotation])
     setMoveCount(prev => prev + 1)
+    stateMovesRef.current = normalizeMoves([...stateMovesRef.current, moveNotation])
     isAnimatingRef.current = false
     setIsAnimating(false)
     setCurrentAnimation(null)
@@ -48,7 +55,6 @@ export function useCubeState() {
     const moves = generateScramble(20)
     solveQueueRef.current = []
     isAnimatingRef.current = false
-    setScrambleMoves(moves)
 
     // Apply all scramble moves instantly
     let newCubies = createSolvedCube()
@@ -57,8 +63,9 @@ export function useCubeState() {
     }
 
     setCubies(newCubies)
-    setMoveHistory(moves)
-    setMoveCount(moves.length)
+    setMoveHistory([])
+    setMoveCount(0)
+    stateMovesRef.current = normalizeMoves(moves)
     setIsAnimating(false)
     setCurrentAnimation(null)
   }, [])
@@ -70,25 +77,26 @@ export function useCubeState() {
     setCubies(createSolvedCube())
     setMoveHistory([])
     setMoveCount(0)
-    setScrambleMoves([])
+    stateMovesRef.current = []
     setIsAnimating(false)
     setCurrentAnimation(null)
   }, [])
 
-  // Auto-solve by reversing scramble moves
   const solve = useCallback(() => {
-    if (scrambleMoves.length === 0 || isAnimatingRef.current) return
+    if (isAnimatingRef.current || isSolved(cubies)) return
 
-    const solveMoves = reverseMoves(scrambleMoves)
+    const solveMoves = reverseMoves(stateMovesRef.current)
     const [firstMove, ...remainingMoves] = solveMoves
 
-    solveQueueRef.current = remainingMoves
-    setScrambleMoves([])
+    if (!firstMove) return
 
-    if (firstMove) {
-      startMove(firstMove)
-    }
-  }, [scrambleMoves, startMove])
+    setMoveHistory([])
+    setMoveCount(0)
+
+    solveQueueRef.current = remainingMoves
+
+    startMove(firstMove)
+  }, [cubies, startMove])
 
   useEffect(() => {
     if (isAnimating || currentAnimation !== null || solveQueueRef.current.length === 0) return
