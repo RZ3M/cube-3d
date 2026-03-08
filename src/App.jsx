@@ -47,7 +47,7 @@ function App() {
       <div className="canvas-container">
         <Canvas
           camera={cameraConfig}
-          gl={{ antialias: true, alpha: false }}
+          gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
           dpr={[1, 2]}
         >
           <color attach="background" args={['#edf1f6']} />

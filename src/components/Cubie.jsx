@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useRef } from 'react'
+import React, { memo, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { RoundedBox } from '@react-three/drei'
 import * as THREE from 'three'
@@ -47,35 +47,32 @@ function createRoundedStickerShape(size, radius) {
   return shape
 }
 
-export const Cubie = memo(function Cubie({ position, colors, animation, onPointerDown }) {
-  const groupRef = useRef()
-  const axisVecRef = useRef(new THREE.Vector3())
+const SHARED_STICKER_GEOMETRY = new THREE.ShapeGeometry(
+  createRoundedStickerShape(STICKER_SIZE, STICKER_RADIUS)
+)
 
-  // Calculate actual position with gap
-  const posX = position[0] * (1 + GAP)
-  const posY = position[1] * (1 + GAP)
-  const posZ = position[2] * (1 + GAP)
-  const stickerShape = useMemo(() => createRoundedStickerShape(STICKER_SIZE, STICKER_RADIUS), [])
+const SHARED_BODY_MATERIAL = new THREE.MeshPhysicalMaterial({
+  color: '#a6b2c3',
+  metalness: 0.02,
+  roughness: 0.48,
+  transmission: 0.54,
+  transparent: true,
+  opacity: 0.82,
+  thickness: 1.25,
+  ior: 1.36,
+  reflectivity: 0.16,
+  attenuationDistance: 0.28,
+  attenuationColor: '#93a1b7',
+  clearcoat: 0.4,
+  clearcoatRoughness: 0.28,
+  envMapIntensity: 0.28
+})
 
-  const bodyMaterial = useMemo(() => new THREE.MeshPhysicalMaterial({
-    color: '#a6b2c3',
-    metalness: 0.02,
-    roughness: 0.48,
-    transmission: 0.54,
-    transparent: true,
-    opacity: 0.82,
-    thickness: 1.25,
-    ior: 1.36,
-    reflectivity: 0.16,
-    attenuationDistance: 0.28,
-    attenuationColor: '#93a1b7',
-    clearcoat: 0.4,
-    clearcoatRoughness: 0.28,
-    envMapIntensity: 0.28
-  }), [])
+const stickerMaterialCache = new Map()
 
-  const stickerMaterials = useMemo(() => {
-    const createStickerMaterial = (color) => new THREE.MeshPhysicalMaterial({
+function getStickerMaterial(color) {
+  if (!stickerMaterialCache.has(color)) {
+    stickerMaterialCache.set(color, new THREE.MeshPhysicalMaterial({
       color,
       metalness: MATERIAL_PROPS.metalness,
       roughness: MATERIAL_PROPS.roughness,
@@ -86,24 +83,31 @@ export const Cubie = memo(function Cubie({ position, colors, animation, onPointe
       transmission: 0,
       transparent: false,
       opacity: 1
-    })
+    }))
+  }
 
+  return stickerMaterialCache.get(color)
+}
+
+export const Cubie = memo(function Cubie({ position, colors, animation, onPointerDown }) {
+  const groupRef = useRef()
+  const axisVecRef = useRef(new THREE.Vector3())
+
+  // Calculate actual position with gap
+  const posX = position[0] * (1 + GAP)
+  const posY = position[1] * (1 + GAP)
+  const posZ = position[2] * (1 + GAP)
+
+  const stickerMaterials = useMemo(() => {
     return {
-      px: createStickerMaterial(colors.px),
-      nx: createStickerMaterial(colors.nx),
-      py: createStickerMaterial(colors.py),
-      ny: createStickerMaterial(colors.ny),
-      pz: createStickerMaterial(colors.pz),
-      nz: createStickerMaterial(colors.nz)
+      px: getStickerMaterial(colors.px),
+      nx: getStickerMaterial(colors.nx),
+      py: getStickerMaterial(colors.py),
+      ny: getStickerMaterial(colors.ny),
+      pz: getStickerMaterial(colors.pz),
+      nz: getStickerMaterial(colors.nz)
     }
   }, [colors.nx, colors.ny, colors.nz, colors.px, colors.py, colors.pz])
-
-  useEffect(() => {
-    return () => {
-      bodyMaterial.dispose()
-      Object.values(stickerMaterials).forEach(material => material.dispose())
-    }
-  }, [bodyMaterial, stickerMaterials])
 
   useFrame(() => {
     const group = groupRef.current
@@ -136,7 +140,7 @@ export const Cubie = memo(function Cubie({ position, colors, animation, onPointe
           args={[CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE]}
           radius={BODY_RADIUS}
           smoothness={BODY_SMOOTHNESS}
-          material={bodyMaterial}
+          material={SHARED_BODY_MATERIAL}
           onPointerDown={(event) => onPointerDown?.(event, position)}
         />
         {STICKER_FACES.map((face) => {
@@ -149,9 +153,8 @@ export const Cubie = memo(function Cubie({ position, colors, animation, onPointe
               rotation={face.rotation}
               material={stickerMaterials[face.key]}
               onPointerDown={(event) => onPointerDown?.(event, position)}
-            >
-              <shapeGeometry args={[stickerShape]} />
-            </mesh>
+              geometry={SHARED_STICKER_GEOMETRY}
+            />
           )
         })}
       </group>
