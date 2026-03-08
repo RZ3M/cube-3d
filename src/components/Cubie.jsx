@@ -58,20 +58,20 @@ export const Cubie = memo(function Cubie({ position, colors, animation, onPointe
   const stickerShape = useMemo(() => createRoundedStickerShape(STICKER_SIZE, STICKER_RADIUS), [])
 
   const bodyMaterial = useMemo(() => new THREE.MeshPhysicalMaterial({
-    color: '#8b98ab',
+    color: '#a6b2c3',
     metalness: 0.02,
-    roughness: 0.58,
-    transmission: 0.46,
+    roughness: 0.48,
+    transmission: 0.54,
     transparent: true,
-    opacity: 0.86,
-    thickness: 1.4,
+    opacity: 0.82,
+    thickness: 1.25,
     ior: 1.36,
     reflectivity: 0.16,
-    attenuationDistance: 0.2,
-    attenuationColor: '#7b889d',
-    clearcoat: 0.34,
-    clearcoatRoughness: 0.34,
-    envMapIntensity: 0.22
+    attenuationDistance: 0.28,
+    attenuationColor: '#93a1b7',
+    clearcoat: 0.4,
+    clearcoatRoughness: 0.28,
+    envMapIntensity: 0.28
   }), [])
 
   const stickerMaterials = useMemo(() => {
